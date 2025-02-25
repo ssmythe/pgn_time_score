@@ -187,7 +187,7 @@ def efficiency_comment(eff_ratio):
     else:
         return "using time optimally"
 
-def detailed_move_stats_table(moves, overall_avg):
+def detailed_move_stats_table(moves, overall_avg, recommended_avg):
     """
     Build a list of strings representing a detailed table of per-move statistics.
     For each move, the following stats are provided:
@@ -197,7 +197,7 @@ def detailed_move_stats_table(moves, overall_avg):
       - CumTime(s): cumulative time used so far
       - AvgSoFar(s): average move time up to that move
       - Delta(%): percentage deviation of the move's time from overall average
-      - Remark: "fast" if >20% below overall average, "slow" if >20% above, "optimal" otherwise.
+      - Remark: "fast" if >20% below recommended move time, "slow" if >20% above recommended move time, "optimal" otherwise.
     """
     lines = []
     header = f"{'No.':>3}  {'Move':<8}  {'Time(s)':>7}  {'CumTime(s)':>10}  {'AvgSoFar(s)':>12}  {'Delta(%)':>8}  {'Remark':>10}"
@@ -207,10 +207,13 @@ def detailed_move_stats_table(moves, overall_avg):
     for i, m in enumerate(moves, start=1):
         cum += m["time_used"]
         avg_so_far = cum / i
+        # Delta relative to overall average remains unchanged.
         delta = ((m["time_used"] - overall_avg) / overall_avg * 100) if overall_avg != 0 else 0
-        if delta < -20:
+        # For the remark, compare move time to the recommended average.
+        rec_delta = ((m["time_used"] - recommended_avg) / recommended_avg * 100) if recommended_avg != 0 else 0
+        if rec_delta < -20:
             remark = "fast"
-        elif delta > 20:
+        elif rec_delta > 20:
             remark = "slow"
         else:
             remark = "optimal"
@@ -320,9 +323,9 @@ def main():
     overall_summary = "Combined, the rapid and variable play suggests aggressive, intuitive decision-making from both sides."
     analysis_lines.append(overall_summary)
 
-    # Generate detailed move statistics tables.
-    white_detail_table = detailed_move_stats_table(white_moves, stats_white["avg_time"])
-    black_detail_table = detailed_move_stats_table(black_moves, stats_black["avg_time"])
+    # Generate detailed move statistics tables using recommended average for remarks.
+    white_detail_table = detailed_move_stats_table(white_moves, stats_white["avg_time"], stats_white["recommended_avg"])
+    black_detail_table = detailed_move_stats_table(black_moves, stats_black["avg_time"], stats_black["recommended_avg"])
 
     # Write output.
     with open(args.output, 'w') as out_file:
