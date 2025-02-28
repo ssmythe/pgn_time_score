@@ -30,13 +30,15 @@ find "$ROOT_DIR" -type f -name "*_movetimes.pgn" | while read -r PGN_FILE; do
     PREFIX="${BASE%_movetimes.pgn}"
     OUTPUT_FILE="$DIR/${PREFIX}_clock.txt"
     
-    echo "Processing '$PGN_FILE' -> '$OUTPUT_FILE'"
-    
-    # Call the Python script.
-    python3 pgn_time_score.py -i "$PGN_FILE" -o "$OUTPUT_FILE"
-    
-    # Check if the Python script succeeded.
-    if [ $? -ne 0 ]; then
-        echo "Error processing '$PGN_FILE'"
+    if [ ! -f ${OUTPUT_FILE} ]; then 
+        echo "Processing '$PGN_FILE' -> '$OUTPUT_FILE'"
+        
+        # Call the Python script.
+        python3 pgn_time_score.py -i "$PGN_FILE" -o "$OUTPUT_FILE"
+        
+        # Check if the Python script succeeded.
+        if [ $? -ne 0 ]; then
+            echo "Error processing '$PGN_FILE'"
+        fi
     fi
 done
