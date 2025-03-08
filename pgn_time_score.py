@@ -4,12 +4,19 @@ import math
 import re
 import chess.pgn
 
+
+def format_mmss(seconds):
+    minutes = int(seconds // 60)
+    secs = int(seconds % 60)
+    return f"{minutes:02d}:{secs:02d}"
+
+
 def parse_time_str(time_str):
     """
     Convert a clock string (e.g. "0:29:59.9") into seconds (float).
     Supports formats like H:MM:SS.s or MM:SS.s.
     """
-    parts = time_str.split(':')
+    parts = time_str.split(":")
     if len(parts) == 3:
         hours = int(parts[0])
         minutes = int(parts[1])
@@ -21,6 +28,7 @@ def parse_time_str(time_str):
         return minutes * 60 + seconds
     else:
         return float(time_str)
+
 
 def process_game(game):
     """
@@ -35,7 +43,7 @@ def process_game(game):
     except ValueError:
         initial_time = 1800.0
 
-    clock_pattern = re.compile(r'\[%clk\s+(\S+)\]')
+    clock_pattern = re.compile(r"\[%clk\s+(\S+)\]")
     board = game.board()
     moves_info = []
     white_prev = initial_time
@@ -52,11 +60,11 @@ def process_game(game):
         else:
             clock_seconds = None
 
-        side = 'W' if board.turn == chess.WHITE else 'B'
+        side = "W" if board.turn == chess.WHITE else "B"
         san_move = board.san(next_node.move)
 
         if clock_seconds is not None:
-            if side == 'W':
+            if side == "W":
                 time_used = white_prev - clock_seconds
                 white_prev = clock_seconds
             else:
@@ -65,11 +73,7 @@ def process_game(game):
         else:
             time_used = 0.0
 
-        moves_info.append({
-            "side": side,
-            "move": san_move,
-            "time_used": time_used
-        })
+        moves_info.append({"side": side, "move": san_move, "time_used": time_used})
 
         board.push(next_node.move)
         node = next_node
@@ -97,6 +101,7 @@ def process_game(game):
 
     return output_lines, moves_info, initial_time
 
+
 def compute_stats(moves, initial_time):
     """
     Compute overall statistics for a list of moves.
@@ -108,7 +113,7 @@ def compute_stats(moves, initial_time):
       - consistency: (std_dev/avg_time)*100,
       - recommended_avg: ideal average move time based on 40 moves per side,
       - efficiency_ratio: (actual avg / recommended_avg)*100.
-    
+
     For a G/30 game (1800 seconds) and 40 moves, the recommended average move time is 45.0 seconds.
     """
     if not moves:
@@ -119,7 +124,7 @@ def compute_stats(moves, initial_time):
             "std_dev": 0.0,
             "consistency": 0.0,
             "recommended_avg": 0.0,
-            "efficiency_ratio": 0.0
+            "efficiency_ratio": 0.0,
         }
     count = len(moves)
     total_time = sum(m["time_used"] for m in moves)
@@ -130,7 +135,9 @@ def compute_stats(moves, initial_time):
 
     # Use 40 moves per side as the basis for the recommended average.
     recommended_avg = initial_time / 40.0
-    efficiency_ratio = (avg_time / recommended_avg * 100) if recommended_avg != 0 else 0.0
+    efficiency_ratio = (
+        (avg_time / recommended_avg * 100) if recommended_avg != 0 else 0.0
+    )
 
     return {
         "count": count,
@@ -139,8 +146,9 @@ def compute_stats(moves, initial_time):
         "std_dev": std_dev,
         "consistency": consistency,
         "recommended_avg": recommended_avg,
-        "efficiency_ratio": efficiency_ratio
+        "efficiency_ratio": efficiency_ratio,
     }
+
 
 def analyze_segments(moves, recommended_avg=45.0):
     """
@@ -148,14 +156,16 @@ def analyze_segments(moves, recommended_avg=45.0):
     Returns a tuple (early_comment, later_comment).
     """
     if len(moves) < 2:
-        return ("Insufficient data for early game analysis.",
-                "Insufficient data for later game analysis.")
+        return (
+            "Insufficient data for early game analysis.",
+            "Insufficient data for later game analysis.",
+        )
     half = len(moves) // 2
     first_half = moves[:half]
     second_half = moves[half:]
     avg_first = sum(m["time_used"] for m in first_half) / len(first_half)
     avg_second = sum(m["time_used"] for m in second_half) / len(second_half)
-    
+
     # Early game analysis based on recommended average.
     early_comment = f"Early game average: {avg_first:.1f} s/move."
     if avg_first < recommended_avg * 0.9:
@@ -164,7 +174,7 @@ def analyze_segments(moves, recommended_avg=45.0):
         early_comment += " Moves were notably slower than recommended."
     else:
         early_comment += " Early game move times were near optimal."
-        
+
     # Later game analysis based on comparison to early game.
     later_comment = f"Later game average: {avg_second:.1f} s/move."
     if avg_second < avg_first * 0.9:
@@ -172,9 +182,12 @@ def analyze_segments(moves, recommended_avg=45.0):
     elif avg_second > avg_first * 1.1:
         later_comment += " Moves became significantly slower in the later game."
     else:
-        later_comment += " Later game move times remained consistent with the early game."
-        
+        later_comment += (
+            " Later game move times remained consistent with the early game."
+        )
+
     return early_comment, later_comment
+
 
 def efficiency_comment(eff_ratio):
     """
@@ -187,49 +200,80 @@ def efficiency_comment(eff_ratio):
     else:
         return "using time optimally"
 
-def detailed_move_stats_table(moves, overall_avg, recommended_avg):
+
+def detailed_move_stats_table(moves, overall_avg, recommended_avg, initial_time):
     """
     Build a list of strings representing a detailed table of per-move statistics.
     For each move, the following stats are provided:
       - No. (move index for that side)
       - Move (SAN)
       - Time(s): time used on that move
-      - CumTime(s): cumulative time used so far
+      - CumTime: cumulative time used so far (MM:SS)
+      - Remain: clock time remaining (initial_time - cumulative time, MM:SS)
       - AvgSoFar(s): average move time up to that move
       - Delta(%): percentage deviation of the move's time from overall average
       - Remark: "fast" if >20% below recommended move time, "slow" if >20% above recommended move time, "optimal" otherwise.
     """
+
+    def format_mmss(seconds):
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{minutes:02d}:{secs:02d}"
+
     lines = []
-    header = f"{'No.':>3}  {'Move':<8}  {'Time(s)':>7}  {'CumTime(s)':>10}  {'AvgSoFar(s)':>12}  {'Delta(%)':>8}  {'Remark':>10}"
+    header = (
+        f"{'No.':>3}  {'Move':<8}  {'Time(s)':>7}  {'CumTime':>10}  "
+        f"{'Remain':>10}  {'AvgSoFar(s)':>12}  {'Delta(%)':>8}  {'Remark':>10}"
+    )
     lines.append(header)
     lines.append("-" * len(header))
     cum = 0.0
     for i, m in enumerate(moves, start=1):
         cum += m["time_used"]
         avg_so_far = cum / i
-        # Delta relative to overall average remains unchanged.
-        delta = ((m["time_used"] - overall_avg) / overall_avg * 100) if overall_avg != 0 else 0
-        # For the remark, compare move time to the recommended average.
-        rec_delta = ((m["time_used"] - recommended_avg) / recommended_avg * 100) if recommended_avg != 0 else 0
+        remain = initial_time - cum  # remaining time in seconds
+        delta = (
+            ((m["time_used"] - overall_avg) / overall_avg * 100)
+            if overall_avg != 0
+            else 0
+        )
+        rec_delta = (
+            ((m["time_used"] - recommended_avg) / recommended_avg * 100)
+            if recommended_avg != 0
+            else 0
+        )
         if rec_delta < -20:
             remark = "fast"
         elif rec_delta > 20:
             remark = "slow"
         else:
             remark = "optimal"
-        line = f"{i:>3}  {m['move']:<8}  {m['time_used']:>7.1f}  {cum:>10.1f}  {avg_so_far:>12.1f}  {delta:>8.1f}%  {remark:>10}"
+        formatted_cum = format_mmss(cum)
+        formatted_remain = format_mmss(remain)
+        line = (
+            f"{i:>3}  {m['move']:<8}  {m['time_used']:>7.1f}  {formatted_cum:>10}  "
+            f"{formatted_remain:>10}  {avg_so_far:>12.1f}  {delta:>8.1f}%  {remark:>10}"
+        )
         lines.append(line)
     return lines
+
 
 def main():
     parser = argparse.ArgumentParser(
         description="Generate an advanced game score with move times, detailed per-move stats, and analysis from a PGN file using python-chess."
     )
-    parser.add_argument("-i", "--input", required=True, help="Input PGN file with move time information")
-    parser.add_argument("-o", "--output", required=True, help="Output text file for the game score and analysis")
+    parser.add_argument(
+        "-i", "--input", required=True, help="Input PGN file with move time information"
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="Output text file for the game score and analysis",
+    )
     args = parser.parse_args()
 
-    with open(args.input, 'r') as pgn_file:
+    with open(args.input, "r") as pgn_file:
         game = chess.pgn.read_game(pgn_file)
         if game is None:
             print("No game found in the PGN file.")
@@ -245,7 +289,7 @@ def main():
     time_control = game.headers.get("TimeControl", "Unknown")
     end_time = game.headers.get("EndTime", "Unknown")
     ply_count = game.headers.get("PlyCount", "Unknown")
-    
+
     game_header = (
         f"{white} ({white_elo}) vs {black} ({black_elo})\n"
         f"Game Type: {event}\n"
@@ -263,8 +307,12 @@ def main():
     stats_black = compute_stats(black_moves, initial_time)
 
     # Segment analysis (using 45s as recommended average for a G/30 game).
-    early_seg_white, later_seg_white = analyze_segments(white_moves, recommended_avg=45.0)
-    early_seg_black, later_seg_black = analyze_segments(black_moves, recommended_avg=45.0)
+    early_seg_white, later_seg_white = analyze_segments(
+        white_moves, recommended_avg=45.0
+    )
+    early_seg_black, later_seg_black = analyze_segments(
+        black_moves, recommended_avg=45.0
+    )
 
     # Clock efficiency comments.
     eff_comment_white = efficiency_comment(stats_white["efficiency_ratio"])
@@ -277,9 +325,15 @@ def main():
     analysis_lines.append(f"  Moves played: {stats_white['count']}")
     analysis_lines.append(f"  Total time used: {stats_white['total_time']:.1f} s")
     analysis_lines.append(f"  Average move time: {stats_white['avg_time']:.1f} s")
-    analysis_lines.append(f"  Clock consistency (std dev/avg): {stats_white['consistency']:.1f}%")
-    analysis_lines.append(f"  Recommended average move time (based on 40 moves): {stats_white['recommended_avg']:.1f} s")
-    analysis_lines.append(f"  Clock efficiency: {stats_white['efficiency_ratio']:.1f}% ({eff_comment_white})")
+    analysis_lines.append(
+        f"  Clock consistency (std dev/avg): {stats_white['consistency']:.1f}%"
+    )
+    analysis_lines.append(
+        f"  Recommended average move time (based on 40 moves): {stats_white['recommended_avg']:.1f} s"
+    )
+    analysis_lines.append(
+        f"  Clock efficiency: {stats_white['efficiency_ratio']:.1f}% ({eff_comment_white})"
+    )
     analysis_lines.append(f"  Early game analysis: {early_seg_white}")
     analysis_lines.append(f"  Later game analysis: {later_seg_white}")
     analysis_lines.append("")
@@ -287,9 +341,15 @@ def main():
     analysis_lines.append(f"  Moves played: {stats_black['count']}")
     analysis_lines.append(f"  Total time used: {stats_black['total_time']:.1f} s")
     analysis_lines.append(f"  Average move time: {stats_black['avg_time']:.1f} s")
-    analysis_lines.append(f"  Clock consistency (std dev/avg): {stats_black['consistency']:.1f}%")
-    analysis_lines.append(f"  Recommended average move time (based on 40 moves): {stats_black['recommended_avg']:.1f} s")
-    analysis_lines.append(f"  Clock efficiency: {stats_black['efficiency_ratio']:.1f}% ({eff_comment_black})")
+    analysis_lines.append(
+        f"  Clock consistency (std dev/avg): {stats_black['consistency']:.1f}%"
+    )
+    analysis_lines.append(
+        f"  Recommended average move time (based on 40 moves): {stats_black['recommended_avg']:.1f} s"
+    )
+    analysis_lines.append(
+        f"  Clock efficiency: {stats_black['efficiency_ratio']:.1f}% ({eff_comment_black})"
+    )
     analysis_lines.append(f"  Early game analysis: {early_seg_black}")
     analysis_lines.append(f"  Later game analysis: {later_seg_black}")
 
@@ -300,13 +360,17 @@ def main():
         analysis_white_sentence = "This high clock efficiency suggests a very cautious and deliberate approach."
     else:
         analysis_white_sentence = "This balanced clock efficiency indicates measured and thoughtful time management."
-        
+
     if stats_black["efficiency_ratio"] < 90:
-        analysis_black_sentence = "This low clock efficiency indicates rapid, aggressive decision-making."
+        analysis_black_sentence = (
+            "This low clock efficiency indicates rapid, aggressive decision-making."
+        )
     elif stats_black["efficiency_ratio"] > 110:
         analysis_black_sentence = "This high clock efficiency suggests a very careful, perhaps overly cautious, approach."
     else:
-        analysis_black_sentence = "This balanced clock efficiency indicates a well-calibrated use of time."
+        analysis_black_sentence = (
+            "This balanced clock efficiency indicates a well-calibrated use of time."
+        )
 
     overall_perf_white = (
         f"Overall Performance (White): Averaged {stats_white['avg_time']:.1f} s/move (clock efficiency: {stats_white['efficiency_ratio']:.1f}%). "
@@ -324,11 +388,21 @@ def main():
     analysis_lines.append(overall_summary)
 
     # Generate detailed move statistics tables using recommended average for remarks.
-    white_detail_table = detailed_move_stats_table(white_moves, stats_white["avg_time"], stats_white["recommended_avg"])
-    black_detail_table = detailed_move_stats_table(black_moves, stats_black["avg_time"], stats_black["recommended_avg"])
+    white_detail_table = detailed_move_stats_table(
+        white_moves,
+        stats_white["avg_time"],
+        stats_white["recommended_avg"],
+        initial_time,
+    )
+    black_detail_table = detailed_move_stats_table(
+        black_moves,
+        stats_black["avg_time"],
+        stats_black["recommended_avg"],
+        initial_time,
+    )
 
     # Write output.
-    with open(args.output, 'w') as out_file:
+    with open(args.output, "w") as out_file:
         out_file.write(game_header + "\n\n")
         out_file.write("Game Moves:\n")
         for line in score_lines:
@@ -346,7 +420,10 @@ def main():
         for line in analysis_lines:
             out_file.write(line + "\n")
 
-    print(f"Game score, detailed move statistics, and analysis written to {args.output}")
+    print(
+        f"Game score, detailed move statistics, and analysis written to {args.output}"
+    )
+
 
 if __name__ == "__main__":
     main()
